@@ -1,0 +1,154 @@
+// TrueKit database schema
+// Source of truth for the product/user/locker/review/trip data model.
+// Run `npm run db:generate` after edits, `npm run db:push` to sync to Supabase.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// -- Users -------------------------------------------------------------------
+// Mirrors auth.users from Supabase. The `id` here is the Supabase auth user id
+// (uuid string). Supabase Auth owns sign-in; this row holds product profile data
+// + relations.
+model User {
+  id        String   @id // matches Supabase auth.users.id
+  email     String   @unique
+  name      String?
+  avatarUrl String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  subscription Subscription?
+  gearItems    GearItem[]
+  reviews      Review[]
+  trips        Trip[]
+
+  @@map("users")
+}
+
+// -- Billing -----------------------------------------------------------------
+model Subscription {
+  id                 String   @id @default(cuid())
+  userId             String   @unique
+  stripeCustomerId   String   @unique
+  stripeSubscriptionId String? @unique
+  stripePriceId      String
+  status             String   // active | trialing | canceled | past_due | incomplete
+  currentPeriodEnd   DateTime
+  cancelAtPeriodEnd  Boolean  @default(false)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("subscriptions")
+}
+
+// -- Catalog -----------------------------------------------------------------
+model Product {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  name        String
+  brand       String
+  category    String   // boots | base-layers | backpacks | shells | sleeping | climbing | etc.
+  description String?
+  specs       Json     // flexible spec storage (weight, materials, fit notes, etc.)
+  imageUrl    String?
+  msrp        Int?     // pence (£)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  gearItems   GearItem[]
+  reviews     Review[]
+
+  @@index([category])
+  @@index([brand])
+  @@map("products")
+}
+
+// -- Gear Locker -------------------------------------------------------------
+// A user's relationship to a product: what they own, want, or have retired.
+model GearItem {
+  id          String    @id @default(cuid())
+  userId      String
+  productId   String
+  status      GearStatus
+  purchasedAt DateTime?
+  notes       String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, productId, status])
+  @@index([userId])
+  @@map("gear_items")
+}
+
+enum GearStatus {
+  OWNED
+  WISHLIST
+  RETIRED
+}
+
+// -- Reviews -----------------------------------------------------------------
+// Use-case-first reviews: rated in the context of a specific trip type and
+// conditions, not a generic 5-star. Verified flag set when reviewer has the
+// product in their Locker as OWNED.
+model Review {
+  id         String   @id @default(cuid())
+  userId     String
+  productId  String
+  rating     Int      // 1-5
+  tripType   String   // hiking | climbing | skiing | trail-running | etc.
+  conditions String?  // wet | alpine | summer | winter | shoulder
+  body       String
+  verified   Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@index([userId])
+  @@map("reviews")
+}
+
+// -- Trips -------------------------------------------------------------------
+// A planned or past trip — drives the AI Gear Advisor's gap analysis.
+model Trip {
+  id          String    @id @default(cuid())
+  userId      String
+  name        String
+  destination String
+  activity    String    // hiking | climbing | skiing | trekking | etc.
+  startDate   DateTime?
+  duration    Int?      // days
+  climate     String?
+  gearList    Json?     // recommended gear snapshot (productIds + reasons)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("trips")
+}
+
+// -- Waitlist (pre-launch landing page) --------------------------------------
+model WaitlistEntry {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  source    String?  // utm_source or referral tag
+  createdAt DateTime @default(now())
+
+  @@map("waitlist_entries")
+}
