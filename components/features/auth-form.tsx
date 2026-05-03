@@ -36,17 +36,14 @@ export function AuthForm({ mode }: { mode: "signin" | "signup" }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // Initial error comes from ?authError=… in the URL (set by /auth/callback,
+  // /auth/confirm, or /api/auth/signin on a failed attempt). Using a lazy
+  // initializer instead of useEffect+setState avoids the cascading-render
+  // pattern that React 19 lints against.
+  const [error, setError] = useState<string | null>(() => search.get("authError"));
   // After signup, Supabase returns even though email isn't confirmed yet.
   // Track that so we can show the "check your email" + Resend state.
   const [signupPendingEmail, setSignupPendingEmail] = useState<string | null>(null);
-
-  // Surface OAuth callback / signin Route Handler errors from the URL on mount.
-  useEffect(() => {
-    const callbackErr = search.get("authError");
-    if (callbackErr) setError(callbackErr);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   async function onGoogle() {
     setError(null);

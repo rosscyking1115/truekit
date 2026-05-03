@@ -112,12 +112,14 @@ export default async function AccountPage() {
                   className="flex items-center justify-between rounded-md border bg-card px-3 py-2"
                 >
                   <span className="capitalize">{id.provider}</span>
-                  <span className="text-xs text-muted-foreground">
-                    Added{" "}
-                    {new Intl.DateTimeFormat("en-GB", { dateStyle: "medium" }).format(
-                      new Date(id.created_at ?? Date.now())
-                    )}
-                  </span>
+                  {id.created_at && (
+                    <span className="text-xs text-muted-foreground">
+                      Added{" "}
+                      {new Intl.DateTimeFormat("en-GB", {
+                        dateStyle: "medium",
+                      }).format(new Date(id.created_at))}
+                    </span>
+                  )}
                 </li>
               ))}
             </ul>

@@ -20,7 +20,11 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
   reporter: process.env.CI ? "github" : "list",
   use: {
-    baseURL: process.env.E2E_BASE_URL ?? "https://truekit-ten.vercel.app",
+    // `||` instead of `??` because an empty-string env var (which CI produces
+    // when a secret isn't set) would still satisfy `??` and leave baseURL
+    // empty — causing every test to fail with "Cannot navigate to invalid URL".
+    // `||` also falls through on empty string.
+    baseURL: process.env.E2E_BASE_URL || "https://truekit-ten.vercel.app",
     trace: "on-first-retry",
     screenshot: "only-on-failure",
     video: "retain-on-failure",
