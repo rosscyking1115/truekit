@@ -1,8 +1,10 @@
-import "server-only";
 import type { Subscription } from "@prisma/client";
 
 /**
  * Tier resolution.
+ *
+ * Pure functions — safe to import from anywhere (server components, client
+ * components, tests). They take a Subscription argument; they don't read it.
  *
  * Anything `active` or `trialing` is a paying member. Anything else (canceled,
  * past_due, incomplete, no row at all) is treated as Free.

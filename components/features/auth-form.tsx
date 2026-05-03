@@ -9,6 +9,7 @@ import { createClient } from "@/lib/supabase/client";
 import { Check, Eye, EyeOff, Loader2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PASSWORD_RULES, validatePassword } from "@/lib/password";
+import { signInAction } from "@/lib/auth/actions";
 
 /**
  * Email + password auth form.
@@ -58,24 +59,19 @@ export function AuthForm({ mode }: { mode: "signin" | "signup" }) {
     }
 
     setLoading(true);
-    const supabase = createClient();
 
     if (mode === "signin") {
-      const { error: authError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-      if (authError) {
-        setLoading(false);
-        setError(authError.message);
-        return;
+      // Server Action handles auth + redirect atomically (Set-Cookie + 302 in
+      // one response). Only returns when there's an error to display.
+      const result = await signInAction({ email, password, next });
+      setLoading(false);
+      if (result?.error) {
+        setError(result.error);
       }
-      // Hard navigation: forces a full reload so the new session cookie is
-      // synchronously read by the dashboard server component. router.push
-      // races the cookie write and silently bounces to /login.
-      window.location.href = next;
       return;
     }
+
+    const supabase = createClient();
 
     // Signup branch
     const { data, error: authError } = await supabase.auth.signUp({
