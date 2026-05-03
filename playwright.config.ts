@@ -16,8 +16,14 @@ export default defineConfig({
   testDir: "./tests/e2e",
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
+  // 1 retry in CI is enough to filter genuine flakes from real bugs without
+  // blowing up the test wall-clock when many tests fail (was 2).
+  retries: process.env.CI ? 1 : 0,
   workers: process.env.CI ? 1 : undefined,
+  // Per-test cap: if a single test takes longer, kill it. Default 30s is fine
+  // but being explicit so a hanging test can't run away with the whole job.
+  timeout: 30_000,
+  expect: { timeout: 5_000 },
   reporter: process.env.CI ? "github" : "list",
   use: {
     // `||` instead of `??` because an empty-string env var (which CI produces
