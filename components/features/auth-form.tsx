@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { useFormStatus } from "react-dom";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -9,18 +10,20 @@ import { createClient } from "@/lib/supabase/client";
 import { Check, Eye, EyeOff, Loader2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PASSWORD_RULES, validatePassword } from "@/lib/password";
-import { signInAction } from "@/lib/auth/actions";
 
 /**
  * Email + password auth form.
  *
- * Google OAuth flow:
- *   1. signInWithOAuth redirects to Google with redirectTo=/auth/callback
- *   2. Google sends user back to /auth/callback?code=…
- *   3. The callback route swaps the code for a session and routes onward.
+ * **Sign-in:** uses a NATIVE form POST to /api/auth/signin. Browser submits,
+ * Route Handler does signInWithPassword + 303 redirect with Set-Cookie in the
+ * same response. No client JS in the critical path → no cookie/redirect race.
+ * Errors come back via ?authError=… in the URL.
  *
- * Set NEXT_PUBLIC_AUTH_GOOGLE_ENABLED=true once the provider is configured
- * in Google Cloud Console + Supabase to surface the button.
+ * **Sign-up:** stays client-side. Different flow shape (resend confirmation,
+ * "check your email" pending state) and there's no cookie race because
+ * email confirmation is handled stateless via /auth/confirm.
+ *
+ * **Google OAuth:** client-side signInWithOAuth → /auth/callback (PKCE).
  */
 const GOOGLE_ENABLED =
   typeof process !== "undefined" &&
@@ -34,78 +37,19 @@ export function AuthForm({ mode }: { mode: "signin" | "signup" }) {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
   // After signup, Supabase returns even though email isn't confirmed yet.
   // Track that so we can show the "check your email" + Resend state.
   const [signupPendingEmail, setSignupPendingEmail] = useState<string | null>(null);
 
-  // Surface OAuth callback errors from the URL on mount.
+  // Surface OAuth callback / signin Route Handler errors from the URL on mount.
   useEffect(() => {
     const callbackErr = search.get("authError");
     if (callbackErr) setError(callbackErr);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const passwordCheck = useMemo(() => validatePassword(password), [password]);
-  const passwordValidForSignup = mode !== "signup" || passwordCheck.ok;
-
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-
-    if (mode === "signup" && !passwordCheck.ok) {
-      setError("Password doesn't meet the requirements below.");
-      return;
-    }
-
-    setLoading(true);
-
-    if (mode === "signin") {
-      // Server Action handles auth + redirect atomically (Set-Cookie + 302 in
-      // one response). Only returns when there's an error to display.
-      const result = await signInAction({ email, password, next });
-      setLoading(false);
-      if (result?.error) {
-        setError(result.error);
-      }
-      return;
-    }
-
-    const supabase = createClient();
-
-    // Signup branch
-    const { data, error: authError } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        // Email-confirm links are stateless OTP — handled at /auth/confirm,
-        // not the OAuth-style /auth/callback (which requires PKCE cookie).
-        emailRedirectTo: `${window.location.origin}/auth/confirm?next=${encodeURIComponent(
-          next
-        )}`,
-      },
-    });
-    setLoading(false);
-
-    if (authError) {
-      setError(authError.message);
-      return;
-    }
-
-    // If email confirmation is OFF, Supabase returns a session immediately.
-    // Same hard-nav reasoning as the signin branch above.
-    if (data.session) {
-      window.location.href = next;
-      return;
-    }
-
-    // Otherwise we wait — show pending state so the user can resend if needed.
-    setSignupPendingEmail(email);
-  }
-
   async function onGoogle() {
     setError(null);
-    setLoading(true);
     const supabase = createClient();
     const { error: authError } = await supabase.auth.signInWithOAuth({
       provider: "google",
@@ -113,10 +57,7 @@ export function AuthForm({ mode }: { mode: "signin" | "signup" }) {
         redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`,
       },
     });
-    if (authError) {
-      setError(authError.message);
-      setLoading(false);
-    }
+    if (authError) setError(authError.message);
   }
 
   if (signupPendingEmail) {
@@ -140,7 +81,6 @@ export function AuthForm({ mode }: { mode: "signin" | "signup" }) {
             variant="outline"
             className="w-full"
             onClick={onGoogle}
-            disabled={loading}
           >
             Continue with Google
           </Button>
@@ -156,68 +96,227 @@ export function AuthForm({ mode }: { mode: "signin" | "signup" }) {
         </>
       )}
 
-      <form onSubmit={onSubmit} className="space-y-3">
-        <div className="space-y-2">
-          <Label htmlFor="email">Email</Label>
-          <Input
-            id="email"
-            type="email"
-            autoComplete="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-          />
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="password">Password</Label>
-          <PasswordInput
-            id="password"
-            autoComplete={mode === "signin" ? "current-password" : "new-password"}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            minLength={mode === "signup" ? 8 : undefined}
-            required
-            visible={showPassword}
-            onToggleVisible={() => setShowPassword((v) => !v)}
-          />
-          {mode === "signup" && (
-            <PasswordRulesList password={password} />
-          )}
-        </div>
-
-        {error && (
-          <p className="text-sm text-destructive" role="alert">
-            {error}
-          </p>
-        )}
-
-        <Button
-          type="submit"
-          className="w-full"
-          disabled={loading || !passwordValidForSignup}
-        >
-          {loading ? (
-            <Loader2 className="size-4 animate-spin" />
-          ) : mode === "signin" ? (
-            "Sign in"
-          ) : (
-            "Create account"
-          )}
-        </Button>
-      </form>
+      {mode === "signin" ? (
+        <SignInForm
+          email={email}
+          setEmail={setEmail}
+          password={password}
+          setPassword={setPassword}
+          showPassword={showPassword}
+          setShowPassword={setShowPassword}
+          next={next}
+          error={error}
+        />
+      ) : (
+        <SignUpForm
+          email={email}
+          setEmail={setEmail}
+          password={password}
+          setPassword={setPassword}
+          showPassword={showPassword}
+          setShowPassword={setShowPassword}
+          next={next}
+          error={error}
+          setError={setError}
+          onSignupSent={() => setSignupPendingEmail(email)}
+        />
+      )}
     </div>
   );
 }
 
+/* ────────────────────────────────────────────────────────────────────────── */
+/* Sign-in: native form POST to /api/auth/signin                             */
+/* ────────────────────────────────────────────────────────────────────────── */
+
+function SignInForm({
+  email,
+  setEmail,
+  password,
+  setPassword,
+  showPassword,
+  setShowPassword,
+  next,
+  error,
+}: {
+  email: string;
+  setEmail: (v: string) => void;
+  password: string;
+  setPassword: (v: string) => void;
+  showPassword: boolean;
+  setShowPassword: (fn: (v: boolean) => boolean) => void;
+  next: string;
+  error: string | null;
+}) {
+  return (
+    <form action="/api/auth/signin" method="POST" className="space-y-3">
+      {/* The Route Handler reads `next` from the form body, not the URL,
+          so it survives client-side state. */}
+      <input type="hidden" name="next" value={next} />
+
+      <div className="space-y-2">
+        <Label htmlFor="email">Email</Label>
+        <Input
+          id="email"
+          name="email"
+          type="email"
+          autoComplete="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="password">Password</Label>
+        <PasswordInput
+          id="password"
+          name="password"
+          autoComplete="current-password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          required
+          visible={showPassword}
+          onToggleVisible={() => setShowPassword((v) => !v)}
+        />
+      </div>
+
+      {error && (
+        <p className="text-sm text-destructive" role="alert">
+          {error}
+        </p>
+      )}
+
+      <SubmitButton label="Sign in" />
+    </form>
+  );
+}
+
+function SubmitButton({ label }: { label: string }) {
+  // useFormStatus reads the parent <form>'s pending state — no JS state
+  // duplicated, no race against navigation.
+  const { pending } = useFormStatus();
+  return (
+    <Button type="submit" className="w-full" disabled={pending}>
+      {pending ? <Loader2 className="size-4 animate-spin" /> : label}
+    </Button>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────────────────── */
+/* Sign-up: client-side (different flow shape, no cookie race)               */
+/* ────────────────────────────────────────────────────────────────────────── */
+
+function SignUpForm({
+  email,
+  setEmail,
+  password,
+  setPassword,
+  showPassword,
+  setShowPassword,
+  next,
+  error,
+  setError,
+  onSignupSent,
+}: {
+  email: string;
+  setEmail: (v: string) => void;
+  password: string;
+  setPassword: (v: string) => void;
+  showPassword: boolean;
+  setShowPassword: (fn: (v: boolean) => boolean) => void;
+  next: string;
+  error: string | null;
+  setError: (v: string | null) => void;
+  onSignupSent: () => void;
+}) {
+  const [loading, setLoading] = useState(false);
+  const passwordCheck = useMemo(() => validatePassword(password), [password]);
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    if (!passwordCheck.ok) {
+      setError("Password doesn't meet the requirements below.");
+      return;
+    }
+    setLoading(true);
+    const supabase = createClient();
+    const { data, error: authError } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        emailRedirectTo: `${window.location.origin}/auth/confirm?next=${encodeURIComponent(
+          next
+        )}`,
+      },
+    });
+    setLoading(false);
+    if (authError) {
+      setError(authError.message);
+      return;
+    }
+    // If email confirmation is OFF, Supabase returns a session immediately.
+    if (data.session) {
+      window.location.href = next;
+      return;
+    }
+    onSignupSent();
+  }
+
+  return (
+    <form onSubmit={onSubmit} className="space-y-3">
+      <div className="space-y-2">
+        <Label htmlFor="email">Email</Label>
+        <Input
+          id="email"
+          type="email"
+          autoComplete="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="password">Password</Label>
+        <PasswordInput
+          id="password"
+          autoComplete="new-password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          minLength={8}
+          required
+          visible={showPassword}
+          onToggleVisible={() => setShowPassword((v) => !v)}
+        />
+        <PasswordRulesList password={password} />
+      </div>
+
+      {error && (
+        <p className="text-sm text-destructive" role="alert">
+          {error}
+        </p>
+      )}
+
+      <Button
+        type="submit"
+        className="w-full"
+        disabled={loading || !passwordCheck.ok}
+      >
+        {loading ? <Loader2 className="size-4 animate-spin" /> : "Create account"}
+      </Button>
+    </form>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────────────────── */
+/* Shared subcomponents                                                       */
+/* ────────────────────────────────────────────────────────────────────────── */
+
 /**
  * "Check your email" state shown after a successful signup with email
- * confirmation enabled. Includes a resend button with a 30-second cooldown
- * so users can request a fresh link if the first never arrived (or the link
- * expired during the 15-minute window).
- *
- * Resending invalidates the previous link — Supabase rotates the token on
- * each `auth.resend({ type: 'signup' })` call.
+ * confirmation enabled. Resend button has a 30-second cooldown.
  */
 function SignupPendingState({
   email,
@@ -254,7 +353,7 @@ function SignupPendingState({
       return;
     }
     setResentAt(Date.now());
-    setCooldown(30); // throttle to keep Supabase happy and reduce abuse
+    setCooldown(30);
   }
 
   return (
@@ -308,10 +407,6 @@ function SignupPendingState({
   );
 }
 
-/**
- * Live checklist showing which password rules pass / fail as the user types.
- * Stays muted-grey until the user starts typing so it doesn't shout red on first paint.
- */
 function PasswordRulesList({ password }: { password: string }) {
   const touched = password.length > 0;
   return (
@@ -345,10 +440,6 @@ function PasswordRulesList({ password }: { password: string }) {
   );
 }
 
-/**
- * Password field with a visibility toggle. Built inline to avoid pulling in
- * another shadcn component for one use site.
- */
 function PasswordInput({
   visible,
   onToggleVisible,
