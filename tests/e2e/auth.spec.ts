@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 
 /**
  * Auth regression suite.
@@ -26,6 +26,26 @@ import { test, expect } from "@playwright/test";
 const EMAIL = process.env.E2E_TEST_EMAIL;
 const PASSWORD = process.env.E2E_TEST_PASSWORD;
 
+/**
+ * `getByLabel("Password")` matches BOTH the input AND the show/hide eye
+ * button (whose aria-label is "Show password"/"Hide password" — those
+ * contain "Password"). Locking to the textbox role disambiguates.
+ */
+function emailField(page: Page) {
+  return page.getByRole("textbox", { name: "Email" });
+}
+function passwordField(page: Page) {
+  return page.getByRole("textbox", { name: "Password" });
+}
+function signInButton(page: Page) {
+  return page.getByRole("button", { name: /^sign in$/i });
+}
+
+async function fillSignIn(page: Page, email: string, password: string) {
+  await emailField(page).fill(email);
+  await passwordField(page).fill(password);
+}
+
 test.describe("auth: sign-in", () => {
   test.skip(
     !EMAIL || !PASSWORD,
@@ -44,13 +64,12 @@ test.describe("auth: sign-in", () => {
     await page.goto("/login");
     await expect(page.getByRole("heading", { name: /welcome back/i })).toBeVisible();
 
-    await page.getByLabel("Email").fill(EMAIL!);
-    await page.getByLabel("Password").fill(PASSWORD!);
+    await fillSignIn(page, EMAIL!, PASSWORD!);
 
     // Single click. Tight timeout — if this takes >5s something is wrong.
     await Promise.all([
       page.waitForURL("**/dashboard", { timeout: 5_000 }),
-      page.getByRole("button", { name: /^sign in$/i }).click(),
+      signInButton(page).click(),
     ]);
 
     // Server-rendered dashboard chrome present (proves the GET to /dashboard
@@ -61,9 +80,8 @@ test.describe("auth: sign-in", () => {
 
   test("session persists across navigations", async ({ page }) => {
     await page.goto("/login");
-    await page.getByLabel("Email").fill(EMAIL!);
-    await page.getByLabel("Password").fill(PASSWORD!);
-    await page.getByRole("button", { name: /^sign in$/i }).click();
+    await fillSignIn(page, EMAIL!, PASSWORD!);
+    await signInButton(page).click();
     await page.waitForURL("**/dashboard");
 
     // Hop around protected pages — should never bounce to /login.
@@ -80,9 +98,8 @@ test.describe("auth: sign-in", () => {
     await page.goto("/billing");
     await expect(page).toHaveURL(/\/login\?.*next=%2Fbilling/);
 
-    await page.getByLabel("Email").fill(EMAIL!);
-    await page.getByLabel("Password").fill(PASSWORD!);
-    await page.getByRole("button", { name: /^sign in$/i }).click();
+    await fillSignIn(page, EMAIL!, PASSWORD!);
+    await signInButton(page).click();
 
     await page.waitForURL("**/billing");
     await expect(page.getByRole("heading", { name: /^billing$/i })).toBeVisible();
@@ -92,10 +109,13 @@ test.describe("auth: sign-in", () => {
     page,
   }) => {
     await page.goto("/login");
-    await page.getByLabel("Email").fill("definitely-not-a-real-user@example.com");
-    await page.getByLabel("Password").fill("Wrong-password-123!");
+    await fillSignIn(
+      page,
+      "definitely-not-a-real-user@example.com",
+      "Wrong-password-123!"
+    );
 
-    await page.getByRole("button", { name: /^sign in$/i }).click();
+    await signInButton(page).click();
 
     // 303 → redirected back to /login with ?authError=…
     await page.waitForURL(/\/login\?.*authError=/);
@@ -105,9 +125,8 @@ test.describe("auth: sign-in", () => {
   test("signed-in users hitting /login bounce to /dashboard", async ({ page }) => {
     // Sign in
     await page.goto("/login");
-    await page.getByLabel("Email").fill(EMAIL!);
-    await page.getByLabel("Password").fill(PASSWORD!);
-    await page.getByRole("button", { name: /^sign in$/i }).click();
+    await fillSignIn(page, EMAIL!, PASSWORD!);
+    await signInButton(page).click();
     await page.waitForURL("**/dashboard");
 
     // Try to navigate back to /login while signed in — proxy.ts should bounce
@@ -118,9 +137,8 @@ test.describe("auth: sign-in", () => {
   test("sign out then back in works (no stale cookie issues)", async ({ page }) => {
     // Sign in
     await page.goto("/login");
-    await page.getByLabel("Email").fill(EMAIL!);
-    await page.getByLabel("Password").fill(PASSWORD!);
-    await page.getByRole("button", { name: /^sign in$/i }).click();
+    await fillSignIn(page, EMAIL!, PASSWORD!);
+    await signInButton(page).click();
     await page.waitForURL("**/dashboard");
 
     // Sign out
@@ -129,11 +147,10 @@ test.describe("auth: sign-in", () => {
 
     // Sign back in — should still be one-click
     await page.goto("/login");
-    await page.getByLabel("Email").fill(EMAIL!);
-    await page.getByLabel("Password").fill(PASSWORD!);
+    await fillSignIn(page, EMAIL!, PASSWORD!);
     await Promise.all([
       page.waitForURL("**/dashboard", { timeout: 5_000 }),
-      page.getByRole("button", { name: /^sign in$/i }).click(),
+      signInButton(page).click(),
     ]);
   });
 });

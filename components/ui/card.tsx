@@ -23,11 +23,16 @@ export const CardHeader = React.forwardRef<
 ));
 CardHeader.displayName = "CardHeader";
 
+/**
+ * CardTitle renders as <h3> by default — semantic heading so screen readers
+ * and getByRole("heading") locators find it. Pages that already have an h1
+ * (which is most of them) can safely have h3 cards under it.
+ */
 export const CardTitle = React.forwardRef<
-  HTMLDivElement,
-  React.HTMLAttributes<HTMLDivElement>
+  HTMLHeadingElement,
+  React.HTMLAttributes<HTMLHeadingElement>
 >(({ className, ...props }, ref) => (
-  <div
+  <h3
     ref={ref}
     className={cn("font-semibold leading-none tracking-tight", className)}
     {...props}
@@ -36,10 +41,10 @@ export const CardTitle = React.forwardRef<
 CardTitle.displayName = "CardTitle";
 
 export const CardDescription = React.forwardRef<
-  HTMLDivElement,
-  React.HTMLAttributes<HTMLDivElement>
+  HTMLParagraphElement,
+  React.HTMLAttributes<HTMLParagraphElement>
 >(({ className, ...props }, ref) => (
-  <div ref={ref} className={cn("text-sm text-muted-foreground", className)} {...props} />
+  <p ref={ref} className={cn("text-sm text-muted-foreground", className)} {...props} />
 ));
 CardDescription.displayName = "CardDescription";
 
