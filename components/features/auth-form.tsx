@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -26,7 +26,6 @@ const GOOGLE_ENABLED =
   process.env.NEXT_PUBLIC_AUTH_GOOGLE_ENABLED === "true";
 
 export function AuthForm({ mode }: { mode: "signin" | "signup" }) {
-  const router = useRouter();
   const search = useSearchParams();
   const next = search.get("next") || "/dashboard";
 
@@ -66,13 +65,15 @@ export function AuthForm({ mode }: { mode: "signin" | "signup" }) {
         email,
         password,
       });
-      setLoading(false);
       if (authError) {
+        setLoading(false);
         setError(authError.message);
         return;
       }
-      router.push(next);
-      router.refresh();
+      // Hard navigation: forces a full reload so the new session cookie is
+      // synchronously read by the dashboard server component. router.push
+      // races the cookie write and silently bounces to /login.
+      window.location.href = next;
       return;
     }
 
@@ -96,9 +97,9 @@ export function AuthForm({ mode }: { mode: "signin" | "signup" }) {
     }
 
     // If email confirmation is OFF, Supabase returns a session immediately.
+    // Same hard-nav reasoning as the signin branch above.
     if (data.session) {
-      router.push(next);
-      router.refresh();
+      window.location.href = next;
       return;
     }
 

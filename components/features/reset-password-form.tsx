@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,7 +15,6 @@ import { PASSWORD_RULES, validatePassword } from "@/lib/password";
  * — they probably hit an expired or already-used link.
  */
 export function ResetPasswordForm() {
-  const router = useRouter();
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [show, setShow] = useState(false);
@@ -49,14 +47,15 @@ export function ResetPasswordForm() {
 
     const supabase = createClient();
     const { error: updateError } = await supabase.auth.updateUser({ password });
-    setLoading(false);
 
     if (updateError) {
+      setLoading(false);
       setError(updateError.message);
       return;
     }
-    router.push("/dashboard");
-    router.refresh();
+    // Hard navigation: ensures the post-update session cookie is fully written
+    // before the dashboard server component reads it.
+    window.location.href = "/dashboard";
   }
 
   if (hasSession === false) {
