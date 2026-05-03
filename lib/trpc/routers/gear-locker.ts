@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { router, protectedProcedure } from "../server";
-import { GearStatus } from "@prisma/client";
+import { GearStatus, Prisma } from "@prisma/client";
+import { TRPCError } from "@trpc/server";
 
 /**
  * Gear Locker — the user's inventory of owned/wanted/retired gear.
@@ -24,17 +25,32 @@ export const gearLockerRouter = router({
         notes: z.string().max(2000).optional(),
       })
     )
-    .mutation(({ ctx, input }) =>
-      ctx.db.gearItem.create({
-        data: {
-          userId: ctx.user.id,
-          productId: input.productId,
-          status: input.status,
-          purchasedAt: input.purchasedAt,
-          notes: input.notes,
-        },
-      })
-    ),
+    .mutation(async ({ ctx, input }) => {
+      try {
+        return await ctx.db.gearItem.create({
+          data: {
+            userId: ctx.user.id,
+            productId: input.productId,
+            status: input.status,
+            purchasedAt: input.purchasedAt,
+            notes: input.notes,
+          },
+        });
+      } catch (err) {
+        // P2002 = unique constraint (userId, productId, status). User already
+        // has this exact combination — surface a clean message.
+        if (
+          err instanceof Prisma.PrismaClientKnownRequestError &&
+          err.code === "P2002"
+        ) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "You've already added this product with that status.",
+          });
+        }
+        throw err;
+      }
+    }),
 
   remove: protectedProcedure
     .input(z.object({ id: z.string().min(1) }))

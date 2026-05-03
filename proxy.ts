@@ -9,18 +9,24 @@ import { updateSession } from "@/lib/supabase/middleware";
  *   actually keeps users signed in across page loads).
  * - Redirects unauthenticated users away from protected routes.
  * - Redirects already-signed-in users away from /login + /signup.
+ *
+ * Next 16 renamed `middleware.ts` to `proxy.ts`. The API surface is identical
+ * to the old middleware (NextRequest in, response out, matcher config). The
+ * difference is purely the file/function name and the runtime (Node, not Edge).
  */
-const PROTECTED_PREFIXES = ["/dashboard", "/gear-locker", "/advisor", "/compare", "/community"];
-const AUTH_PAGES = ["/login", "/signup"];
+const PROTECTED_PREFIXES = ["/dashboard", "/gear-locker", "/advisor", "/compare", "/community", "/billing", "/account"];
+const AUTH_PAGES = ["/login", "/signup", "/forgot-password"];
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { supabaseResponse, user } = await updateSession(request);
   const { pathname } = request.nextUrl;
 
   const isProtected = PROTECTED_PREFIXES.some(
     (p) => pathname === p || pathname.startsWith(`${p}/`)
   );
-  const isAuthPage = AUTH_PAGES.includes(pathname);
+  const isAuthPage = AUTH_PAGES.some(
+    (p) => pathname === p || pathname.startsWith(`${p}/`)
+  );
 
   if (isProtected && !user) {
     const url = request.nextUrl.clone();

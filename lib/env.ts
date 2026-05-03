@@ -16,6 +16,16 @@ const publicSchema = z.object({
   NEXT_PUBLIC_APP_URL: z.string().url().default("http://localhost:3000"),
 });
 
+/**
+ * `optionalString` lets a key be missing OR empty-string (Next.js loads blank
+ * `.env` lines as `""`, not undefined). Without this, an empty RESEND_API_KEY
+ * fails `.min(1)` *before* `.optional()` can excuse it.
+ */
+const optionalString = z.preprocess(
+  (v) => (typeof v === "string" && v === "" ? undefined : v),
+  z.string().min(1).optional()
+);
+
 const serverSchema = z.object({
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
   DATABASE_URL: z.string().url().min(1),
@@ -23,7 +33,7 @@ const serverSchema = z.object({
   STRIPE_SECRET_KEY: z.string().min(1),
   STRIPE_WEBHOOK_SECRET: z.string().min(1),
   STRIPE_PRO_PRICE_ID: z.string().min(1),
-  RESEND_API_KEY: z.string().min(1).optional(),
+  RESEND_API_KEY: optionalString,
 });
 
 // During build, NEXT_PUBLIC_* may be empty strings. Use a permissive parse and

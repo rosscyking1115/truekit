@@ -5,6 +5,7 @@ import { serverEnv } from "@/lib/env";
 import {
   handleSubscriptionUpsert,
   handleSubscriptionDeleted,
+  handleCheckoutCompleted,
 } from "@/lib/stripe/webhooks";
 
 /**
@@ -30,6 +31,9 @@ export async function POST(req: NextRequest) {
 
   try {
     switch (event.type) {
+      case "checkout.session.completed":
+        await handleCheckoutCompleted(event.data.object);
+        break;
       case "customer.subscription.created":
       case "customer.subscription.updated":
       case "customer.subscription.trial_will_end":
@@ -38,8 +42,6 @@ export async function POST(req: NextRequest) {
       case "customer.subscription.deleted":
         await handleSubscriptionDeleted(event.data.object);
         break;
-      // checkout.session.completed → webhook still fires customer.subscription.created
-      // for subscription mode, so we don't need to handle it separately yet.
       default:
         // Unhandled events are fine — Stripe sends a lot we don't care about.
         break;

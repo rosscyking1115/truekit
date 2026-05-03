@@ -2,12 +2,26 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { SignOutButton } from "@/components/features/sign-out-button";
-import { Compass, Layers, ScaleIcon, Users, LayoutDashboard } from "lucide-react";
+import {
+  Compass,
+  Layers,
+  ScaleIcon,
+  Users,
+  LayoutDashboard,
+  CreditCard,
+  UserCircle,
+  Sparkles,
+} from "lucide-react";
+import { db } from "@/lib/db";
+import { tierFromSubscription } from "@/lib/subscription";
+import { cn } from "@/lib/utils";
 
 /**
  * Dashboard chrome — sidebar nav + header.
- * Middleware already gates this group; the redirect here is belt-and-braces
- * (and gives us the user object for the header without an extra fetch).
+ *
+ * Reads the user's subscription tier server-side so we can surface a small
+ * "Pro" badge (members) or a quiet "Upgrade" chip (free) in the header.
+ * Both are intentionally low-key: trust over funnel.
  */
 export default async function DashboardLayout({
   children,
@@ -20,6 +34,9 @@ export default async function DashboardLayout({
   } = await supabase.auth.getUser();
 
   if (!user) redirect("/login");
+
+  const sub = await db.subscription.findUnique({ where: { userId: user.id } });
+  const tier = tierFromSubscription(sub);
 
   return (
     <div className="flex flex-1">
@@ -47,13 +64,28 @@ export default async function DashboardLayout({
           <NavLink href="/community" icon={<Users className="size-4" />}>
             Community
           </NavLink>
+          <div className="my-2 border-t border-border/60" />
+          <NavLink href="/billing" icon={<CreditCard className="size-4" />}>
+            Billing
+          </NavLink>
+          <NavLink href="/account" icon={<UserCircle className="size-4" />}>
+            Account
+          </NavLink>
         </nav>
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center justify-between border-b border-border/60 px-6 py-3 text-sm">
-          <span className="text-muted-foreground">{user.email}</span>
-          <SignOutButton />
+        <header className="flex items-center justify-between gap-3 border-b border-border/60 px-6 py-3 text-sm">
+          <Link
+            href="/account"
+            className="truncate text-muted-foreground transition-colors hover:text-foreground"
+          >
+            {user.email}
+          </Link>
+          <div className="flex items-center gap-2">
+            <PlanChip tier={tier} />
+            <SignOutButton />
+          </div>
         </header>
         <main className="flex-1 px-6 py-8">{children}</main>
       </div>
@@ -77,6 +109,38 @@ function NavLink({
     >
       {icon}
       {children}
+    </Link>
+  );
+}
+
+/**
+ * Header tier chip.
+ *
+ * Pro:  small green pill, no link (it's a recognition signal, not a CTA).
+ * Free: muted "Upgrade" chip linking to /billing — easy to find, easy to ignore.
+ */
+function PlanChip({ tier }: { tier: "free" | "pro" }) {
+  if (tier === "pro") {
+    return (
+      <span
+        className={cn(
+          "inline-flex items-center gap-1 rounded-full border border-primary/40 bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary"
+        )}
+      >
+        <Sparkles className="size-3" />
+        Pro
+      </span>
+    );
+  }
+  return (
+    <Link
+      href="/billing"
+      className={cn(
+        "inline-flex items-center gap-1 rounded-full border bg-card px-2.5 py-0.5 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+      )}
+    >
+      <Sparkles className="size-3" />
+      Upgrade
     </Link>
   );
 }

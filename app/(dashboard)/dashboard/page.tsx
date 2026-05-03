@@ -1,6 +1,27 @@
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import Link from "next/link";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { db } from "@/lib/db";
+import { tierFromSubscription } from "@/lib/subscription";
+import { createClient } from "@/lib/supabase/server";
+import { redirect } from "next/navigation";
+import { Sparkles } from "lucide-react";
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const sub = await db.subscription.findUnique({ where: { userId: user.id } });
+  const tier = tierFromSubscription(sub);
+
   return (
     <div className="space-y-6">
       <div>
@@ -9,6 +30,8 @@ export default function DashboardPage() {
           Your gear, your trips, your verdicts — all in one place.
         </p>
       </div>
+
+      {tier === "free" && <UpgradeNudge />}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <Card>
@@ -48,5 +71,31 @@ export default function DashboardPage() {
         </Card>
       </div>
     </div>
+  );
+}
+
+/**
+ * Quiet upgrade card. Mid-page so it's noticeable but not in the user's face;
+ * outline + soft language; clearly opt-in. Hidden entirely for Pro members.
+ */
+function UpgradeNudge() {
+  return (
+    <Link
+      href="/billing"
+      className="group block rounded-lg border border-dashed bg-card px-4 py-3 transition-colors hover:border-primary/40 hover:bg-primary/5"
+    >
+      <div className="flex items-center gap-3 text-sm">
+        <Sparkles className="size-4 shrink-0 text-primary" />
+        <div className="min-w-0 flex-1">
+          <p className="font-medium text-foreground">Want more?</p>
+          <p className="text-xs text-muted-foreground">
+            TrueKit Pro unlocks the Advisor, full comparisons, gap analysis. £10 / month.
+          </p>
+        </div>
+        <span className="text-xs text-muted-foreground transition-colors group-hover:text-primary">
+          See what&apos;s included →
+        </span>
+      </div>
+    </Link>
   );
 }

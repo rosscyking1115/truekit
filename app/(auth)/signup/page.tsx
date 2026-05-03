@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { AuthForm } from "@/components/features/auth-form";
 import {
@@ -16,7 +17,11 @@ export default function SignupPage() {
         <CardDescription>Start building your Gear Locker.</CardDescription>
       </CardHeader>
       <CardContent>
-        <AuthForm mode="signup" />
+        {/* AuthForm reads ?next + ?authError via useSearchParams; that bails
+            out static generation unless wrapped in Suspense. */}
+        <Suspense fallback={<div className="h-32" />}>
+          <AuthForm mode="signup" />
+        </Suspense>
         <p className="mt-6 text-center text-sm text-muted-foreground">
           Already have an account?{" "}
           <Link href="/login" className="font-medium text-primary hover:underline">
